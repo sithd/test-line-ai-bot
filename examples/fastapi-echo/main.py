@@ -49,8 +49,8 @@ configuration = Configuration(
 )
 
 app = FastAPI()
-async_api_client = AsyncApiClient(configuration)
-line_bot_api = AsyncMessagingApi(async_api_client)
+#async_api_client = AsyncApiClient(configuration)
+#line_bot_api = AsyncMessagingApi(async_api_client)
 parser = WebhookParser(channel_secret)
 
 
@@ -66,18 +66,25 @@ async def handle_callback(request: Request):
         events = parser.parse(body, signature)
     except InvalidSignatureError:
         raise HTTPException(status_code=400, detail="Invalid signature")
+        
+# Create async client HERE — inside the async handler (event loop exists!)
+    async with AsyncApiClient(configuration) as async_api_client:
+        line_bot_api = AsyncMessagingApi(async_api_client)
 
-    for event in events:
-        if not isinstance(event, MessageEvent):
-            continue
-        if not isinstance(event.message, TextMessageContent):
-            continue
+        for event in events:
+            if not isinstance(event, MessageEvent):
+                continue
+            if not isinstance(event.message, TextMessageContent):
+                continue
 
-        await line_bot_api.reply_message(
-            ReplyMessageRequest(
-                reply_token=event.reply_token,
-                messages=[TextMessage(text="Auto Echo Test: " + event.message.text)]
+            # Your test prefix
+            reply_text = "Auto Echo Test: " + event.message.text
+
+            await line_bot_api.reply_message(
+                ReplyMessageRequest(
+                    reply_token=event.reply_token,
+                    messages=[TextMessage(text=reply_text)]
+                )
             )
-        )
 
     return 'OK'

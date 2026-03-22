@@ -16,6 +16,7 @@ import os
 import sys
 
 from fastapi import Request, FastAPI, HTTPException
+from anthropic import AsyncAnthropic
 
 from linebot.v3.webhook import WebhookParser
 from linebot.v3.messaging import (
@@ -53,6 +54,12 @@ app = FastAPI()
 #line_bot_api = AsyncMessagingApi(async_api_client)
 parser = WebhookParser(channel_secret)
 
+# Load Anthropic key 
+# Remember to add this to Vercel env vars
+ANTHROPIC_API_KEY = os.getenv('ANTHROPIC_API_KEY')
+if ANTHROPIC_API_KEY is None:
+    print('Specify ANTHROPIC_API_KEY as environment variable.')
+    sys.exit(1)
 
 @app.post("/callback")
 async def handle_callback(request: Request):
@@ -67,7 +74,7 @@ async def handle_callback(request: Request):
     except InvalidSignatureError:
         raise HTTPException(status_code=400, detail="Invalid signature")
         
-# Create async client HERE — inside the async handler (event loop exists!)
+# Create async client HERE — inside the async handler
     async with AsyncApiClient(configuration) as async_api_client:
         line_bot_api = AsyncMessagingApi(async_api_client)
 
@@ -78,7 +85,35 @@ async def handle_callback(request: Request):
                 continue
 
             # Your test prefix
-            reply_text = "Auto Echo Test: " + event.message.text
+            #reply_text = "Auto Echo Test: " + event.message.text
+            user_message = event.message.text
+            
+            
+            # Call Claude
+            try:
+                client = AsyncAnthropic(api_key=ANTHROPIC_API_KEY)
+
+                response = await client.messages.create(
+                    model="claude-sonnet-4-20250514",          
+                    max_tokens=400,                            
+                    temperature=0.7,
+                    system=(
+                        "You are a friendly and helpful customer support "
+                        "and sales assistant. Be concise, polite, accurate, "
+                        "and upbeat. Answer questions about products, "
+                        "services, hours, or orders. If unsure, say "
+                        "'Let me check that for you' or suggest contacting support."
+                    ),
+                    messages=[
+                        {"role": "user", "content": user_message}
+                    ]
+                )
+
+                reply_text = response.content[0].text.strip()
+
+            except Exception as e:
+                print(f"Claude error: {str(e)}")
+                reply_text = "Sorry, I'm having trouble thinking right now. Please try again later!"
 
             await line_bot_api.reply_message(
                 ReplyMessageRequest(

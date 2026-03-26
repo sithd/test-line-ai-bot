@@ -50,6 +50,10 @@ configuration = Configuration(
 )
 
 app = FastAPI()
+
+# In-memory conversation history: user_id → list of {"role": ..., "content": ...}
+conversation_history = {}
+
 #async_api_client = AsyncApiClient(configuration)
 #line_bot_api = AsyncMessagingApi(async_api_client)
 parser = WebhookParser(channel_secret)
@@ -84,37 +88,57 @@ async def handle_callback(request: Request):
             if not isinstance(event.message, TextMessageContent):
                 continue
 
-            # Your test prefix
-            #reply_text = "Auto Echo Test: " + event.message.text
+            user_id = event.source.user_id
             user_message = event.message.text
-            
-            
-            # Call Claude
+
+            # Initialize history for this user if it doesn't exist
+            if user_id not in conversation_history:
+                conversation_history[user_id] = []
+
+            # Add user's message to history
+            conversation_history[user_id].append({"role": "user", "content": user_message})
+
+            # Limit history to last 10 messages to control cost
+            if len(conversation_history[user_id]) > 10:
+                conversation_history[user_id] = conversation_history[user_id][-10:]
+
+            print(f"User {user_id[:8]}... | History length: {len(conversation_history[user_id])}")
+
             try:
                 client = AsyncAnthropic(api_key=ANTHROPIC_API_KEY)
 
                 response = await client.messages.create(
-                    model="claude-sonnet-4-20250514",          
-                    max_tokens=400,                            
+                    model="claude-sonnet-4-20250514",
+                    max_tokens=400,
                     temperature=0.7,
                     system=(
-                        "You are a friendly and helpful customer support "
-                        "and sales assistant. Be concise, polite, accurate, "
-                        "and upbeat. Answer questions about products, "
-                        "services, hours, or orders. If unsure, say "
-                        "'Let me check that for you' or suggest contacting support."
+                        "You are a professional customer support and sales assistant for my eyewear business in Bangkok, Thailand. "
+                        "Your ONLY job is to help customers with questions about our products, services, business hours, "
+                        "orders, pricing, shipping, returns, or promotions. "
+                        
+                        "Rules you MUST follow:"
+                        "- If the user's message is about our business, products, or services → answer helpfully and accurately."
+                        "- If the user's message is off-topic (e.g. asking for a story, joke, poem, personal advice, "
+                        "  unrelated opinions, or anything not related to our business), respond politely with: "
+                        "'I'm here to help with questions about our products and services. How can I assist you today?' "
+                        "  and do not engage with the off-topic request."
+                        "- Never write stories, poems, jokes, code, or creative content unless it directly relates to a product."
+                        "- Stay professional, friendly, and concise."
+                        "- If you're unsure about something business-related, say 'Let me check that for you' instead of guessing."
                     ),
-                    messages=[
-                        {"role": "user", "content": user_message}
-                    ]
+                    messages=conversation_history[user_id]
                 )
 
                 reply_text = response.content[0].text.strip()
+
+                # ── IMPORTANT: Add Claude's reply to history ─────────────
+                conversation_history[user_id].append({"role": "assistant", "content": reply_text})
 
             except Exception as e:
                 print(f"Claude error: {str(e)}")
                 reply_text = "Sorry, I'm having trouble thinking right now. Please try again later!"
 
+            # Send reply to LINE
             await line_bot_api.reply_message(
                 ReplyMessageRequest(
                     reply_token=event.reply_token,

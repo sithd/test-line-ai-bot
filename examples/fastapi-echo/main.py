@@ -140,8 +140,18 @@ async def handle_callback(request: Request):
                         "'Sorry, I'm here to help with only questions about our products and services. How can I assist you today?' "
                         "  and do not engage with the off-topic request."
                         "- Never write stories, poems, jokes, code, or creative content unless it directly relates to a product."
+                        
                         "- Stay professional, friendly, and concise."
                         "- If you're unsure about something business-related, say 'Let me check that for you' instead of guessing."
+                        "- When a customer asks 'What are your products?', 'What do you sell?', or similar broad questions, "
+                        "give a **short, friendly summary** first (2-4 sentences max). Do NOT list everything.\n"
+                        "- After the summary, offer to provide more details. Example: "
+                        "'We carry designer frames like Ray-Ban and Oakley, everyday fashion frames, sunglasses, "
+                        "and a full range of lens options. Would you like recommendations based on your face shape, "
+                        "or are you looking for something specific like blue light glasses or polarized sunglasses?'\n"
+                        "- Only give detailed information when the customer asks for a specific category, brand, or product.\n"
+                        "- Be concise, polite, and helpful. Try to guide the conversation naturally.\n"
+                        "- Never send extremely long messages unless the customer specifically requests full details."
                     ),
                     messages=conversation_history[user_id]
                 )

@@ -123,7 +123,7 @@ async def handle_callback(request: Request):
 
                 response = await client.messages.create(
                     model="claude-sonnet-4-20250514",
-                    max_tokens=400,
+                    max_tokens=1500,
                     temperature=0.7,
                     system=(
                         "You are a professional customer support and sales assistant for my eyewear business in Bangkok, Thailand. "

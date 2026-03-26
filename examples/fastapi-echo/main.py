@@ -49,6 +49,20 @@ configuration = Configuration(
     access_token=channel_access_token
 )
 
+# Load product information from text file
+PRODUCT_INFO = ""
+
+try:
+    with open("products.txt", "r", encoding="utf-8") as f:
+        PRODUCT_INFO = f.read().strip()
+    print(f"Loaded product information: {len(PRODUCT_INFO)} characters")
+except FileNotFoundError:
+    print("Warning: products.txt not found. Place it in the same folder as main.py")
+    PRODUCT_INFO = "No product information available."
+except Exception as e:
+    print(f"Error loading products.txt: {e}")
+    PRODUCT_INFO = "No product information available."
+
 app = FastAPI()
 
 # In-memory conversation history: user_id → list of {"role": ..., "content": ...}
@@ -116,11 +130,14 @@ async def handle_callback(request: Request):
                         "Your ONLY job is to help customers with questions about our products, services, business hours, "
                         "orders, pricing, shipping, returns, or promotions. "
                         
+                        "Here is our current product and business information:\n"
+                        f"{PRODUCT_INFO}\n\n"
+                        
                         "Rules you MUST follow:"
                         "- If the user's message is about our business, products, or services → answer helpfully and accurately."
                         "- If the user's message is off-topic (e.g. asking for a story, joke, poem, personal advice, "
                         "  unrelated opinions, or anything not related to our business), respond politely with: "
-                        "'I'm here to help with questions about our products and services. How can I assist you today?' "
+                        "'Sorry, I'm here to help with only questions about our products and services. How can I assist you today?' "
                         "  and do not engage with the off-topic request."
                         "- Never write stories, poems, jokes, code, or creative content unless it directly relates to a product."
                         "- Stay professional, friendly, and concise."

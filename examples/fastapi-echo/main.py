@@ -14,6 +14,11 @@
 
 import os
 import sys
+import smtplib
+import datetime
+import asyncio
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
 
 from fastapi import Request, FastAPI, HTTPException
 from anthropic import AsyncAnthropic
@@ -35,7 +40,7 @@ from linebot.v3.webhooks import (
 )
 
 
-# get channel_secret and channel_access_token from your environment variable
+# ENV Variables
 channel_secret = os.getenv('LINE_CHANNEL_SECRET', None)
 channel_access_token = os.getenv('LINE_CHANNEL_ACCESS_TOKEN', None)
 if channel_secret is None:
@@ -48,6 +53,14 @@ if channel_access_token is None:
 configuration = Configuration(
     access_token=channel_access_token
 )
+
+# Email configuration for escalations
+EMAIL_SENDER = os.getenv('EMAIL_SENDER')          # Your Gmail address
+EMAIL_PASSWORD = os.getenv('EMAIL_PASSWORD')      # Gmail App Password (NOT your regular password)
+EMAIL_RECEIVER = os.getenv('EMAIL_RECEIVER')      # Your email to receive notifications
+
+if not all([EMAIL_SENDER, EMAIL_PASSWORD, EMAIL_RECEIVER]):
+    print("Warning: Email credentials not set. Escalation emails will not be sent.")
 
 # Load product information from text file
 PRODUCT_INFO = ""
@@ -78,6 +91,51 @@ ANTHROPIC_API_KEY = os.getenv('ANTHROPIC_API_KEY')
 if ANTHROPIC_API_KEY is None:
     print('Specify ANTHROPIC_API_KEY as environment variable.')
     sys.exit(1)
+    
+client = AsyncAnthropic(api_key=ANTHROPIC_API_KEY)    
+
+def send_escalation_email(user_id: str, latest_message: str, history: list):
+    if not all([EMAIL_SENDER, EMAIL_PASSWORD, EMAIL_RECEIVER]):
+        print(f"Email credentials missing. Skipping escalation for user {user_id[:8]}...")
+        return
+
+    try:
+        subject = f"🚨 LINE Bot Escalation - User {user_id[:8]}..."
+
+        # Build the email body properly
+        body = f"""
+                A customer has requested human assistance through the LINE bot.
+
+                User ID: {user_id}
+                Latest Message: {latest_message}
+
+                Full Conversation History:
+                """
+
+        # Add conversation history with better formatting
+        for i, msg in enumerate(history[-15:], 1):   # Show last 15 messages
+            role = "👤 CUSTOMER" if msg["role"] == "user" else "🤖 BOT"
+            body += f"\n{i}. {role}:\n{msg['content']}\n"
+
+        body += "\n--- End of Conversation ---\n"
+        body += f"Time: {__import__('datetime').datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+
+        # Create email message
+        msg = MIMEMultipart()
+        msg['From'] = EMAIL_SENDER
+        msg['To'] = EMAIL_RECEIVER
+        msg['Subject'] = subject
+        msg.attach(MIMEText(body, 'plain'))
+
+        # Send email
+        with smtplib.SMTP_SSL('smtp.gmail.com', 465) as server:
+            server.login(EMAIL_SENDER, EMAIL_PASSWORD)
+            server.send_message(msg)
+
+        print(f"✅ Escalation email sent successfully for user {user_id[:8]}...")
+
+    except Exception as e:
+        print(f"❌ Failed to send escalation email: {str(e)}")
 
 @app.post("/callback")
 async def handle_callback(request: Request):
@@ -116,14 +174,14 @@ async def handle_callback(request: Request):
             if len(conversation_history[user_id]) > 10:
                 conversation_history[user_id] = conversation_history[user_id][-10:]
 
-            print(f"User {user_id[:8]}... | History length: {len(conversation_history[user_id])}")
+            #print(f"User {user_id[:8]}... | History length: {len(conversation_history[user_id])}")
 
             try:
-                client = AsyncAnthropic(api_key=ANTHROPIC_API_KEY)
+                #client = AsyncAnthropic(api_key=ANTHROPIC_API_KEY)
 
                 response = await client.messages.create(
                     model="claude-sonnet-4-20250514",
-                    max_tokens=1500,
+                    max_tokens=800,
                     temperature=0.7,
                     system=(
                         "You are a professional customer support and sales assistant for my eyewear business in Bangkok, Thailand. "
@@ -154,11 +212,40 @@ async def handle_callback(request: Request):
                         "- Only give detailed information when the customer asks for a specific category, brand, or product.\n"
                         "- Be concise, polite, and helpful. Try to guide the conversation naturally.\n"
                         "- Never send extremely long messages unless the customer specifically requests full details."
+                        
+                        "Refund and Return Policy Handling:"
+                        "- Clearly explain our return policy: [insert your actual policy here, e.g. 30 days, must be unworn, original packaging, etc.]"
+                        "- For any refund or return request, collect these details: order number, reason, date of purchase."
+                        "- Be empathetic and professional."
+                        "- Never approve or deny refunds yourself."
+                        "- Always say something like: 'I'll forward this to our support team for review."
+                        "- Escalate all refund requests to a human agent."
+                        
+                        "Escalation Rules:\n"
+                        "- If the customer asks for a refund, return, damaged item, or has a serious complaint → respond with '[ESCALATE_TO_HUMAN]' at the very beginning of your response.\n"
+                        "- If you are unsure how to handle the request or it involves money/policy decisions → respond with '[ESCALATE_TO_HUMAN]' at the beginning.\n"
+                        "- For normal questions, respond normally without the tag.\n"
+                        "- Always be polite and empathetic."
                     ),
                     messages=conversation_history[user_id]
                 )
 
-                reply_text = response.content[0].text.strip()
+                raw_reply = response.content[0].text.strip()
+
+                # Check for escalation tag
+                if raw_reply.startswith("[ESCALATE_TO_HUMAN]"):
+                    reply_text = "I understand this is important. I'll ping a human support team member right away. Please hold on for a moment."
+                    #await send_escalation_email(user_id, user_message, conversation_history[user_id])
+                    asyncio.create_task(
+                        asyncio.to_thread(
+                            send_escalation_email,
+                            user_id,
+                            user_message,
+                            conversation_history[user_id]
+                        )
+                    )
+                else:
+                    reply_text = raw_reply
 
                 # ── IMPORTANT: Add Claude's reply to history ─────────────
                 conversation_history[user_id].append({"role": "assistant", "content": reply_text})

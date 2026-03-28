@@ -92,7 +92,7 @@ if ANTHROPIC_API_KEY is None:
     print('Specify ANTHROPIC_API_KEY as environment variable.')
     sys.exit(1)
     
-client = AsyncAnthropic(api_key=ANTHROPIC_API_KEY)    
+client = AsyncAnthropic(api_key=ANTHROPIC_API_KEY)
 
 def send_escalation_email(user_id: str, latest_message: str, history: list):
     if not all([EMAIL_SENDER, EMAIL_PASSWORD, EMAIL_RECEIVER]):
@@ -200,6 +200,7 @@ async def handle_callback(request: Request):
                         "- Never write stories, poems, jokes, code, or creative content unless it directly relates to a product."
                         
                         "- Stay professional, friendly, and concise."
+                        "- Answer using customer's language or one that they prefer. (e.g. if the customer asked in German, respond in German."
                         "- You do not have the ability to search online. Do not offer to look on the web for availability or store directions."
                         "- Do not offer virtual try ons. The store doesn't have a working website."
                         "- If you're unsure about something business-related, say 'Let me check that for you' instead of guessing."
